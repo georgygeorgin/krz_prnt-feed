@@ -1,0 +1,66 @@
+name: F9 Baltic XML feed
+
+on:
+  schedule:
+    - cron: '10 */4 * * *'   # every 4 hours (UTC), 30 min apart from Prenta
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: 'Only print the API answer structure (no publish)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# one Pages site for all feeds: never deploy two at once
+concurrency:
+  group: pages-feeds
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+    env:
+      F9_USER: ${{ secrets.F9_USER }}
+      F9_PASS: ${{ secrets.F9_PASS }}
+      F9_CLIENT_ID: ${{ secrets.F9_CLIENT_ID }}
+      F9_KEY: ${{ secrets.F9_KEY }}
+      F9_ONLY_EAN: ${{ vars.F9_ONLY_EAN }}
+      F9_SKIP_CATS: ${{ vars.F9_SKIP_CATS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Probe API answer
+        if: ${{ inputs.probe }}
+        run: python3 f9/f9_feed.py --probe
+
+      # Pages publishes the whole folder at once, so bring back the other feeds already online
+      - name: Fetch current feeds
+        if: ${{ !inputs.probe }}
+        run: |
+          mkdir -p public
+          [ -n "${{ vars.F9_FEED_FILE }}" ] && curl -fsS "${{ vars.PAGES_URL }}/${{ vars.F9_FEED_FILE }}" -o "public/${{ vars.F9_FEED_FILE }}" || true
+          [ -n "${{ vars.FEED_FILE }}" ] && curl -fsS "${{ vars.PAGES_URL }}/${{ vars.FEED_FILE }}" -o "public/${{ vars.FEED_FILE }}" || true
+          ls -la public
+
+      - name: Build XML from F9 API
+        if: ${{ !inputs.probe }}
+        run: python3 f9/f9_feed.py "public/${{ vars.F9_FEED_FILE }}"
+
+      - name: No directory listing
+        if: ${{ !inputs.probe }}
+        run: echo '<!doctype html><title>.</title>' > public/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        if: ${{ !inputs.probe }}
+        with:
+          path: public
+
+      - uses: actions/deploy-pages@v4
+        if: ${{ !inputs.probe }}
