@@ -11,7 +11,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: prenta-feed
+  group: pages-feeds
   cancel-in-progress: false
 
 jobs:
@@ -35,6 +35,8 @@ jobs:
         run: |
           mkdir -p public
           curl -fsS "${{ vars.FEED_URL }}" -o "public/${{ vars.FEED_FILE }}" || true
+          # other feeds on the same Pages site (F9), so this deploy doesn't remove them
+          [ -n "${{ vars.F9_FEED_FILE }}" ] && curl -fsS "${{ vars.PAGES_URL }}/${{ vars.F9_FEED_FILE }}" -o "public/${{ vars.F9_FEED_FILE }}" || true
 
       - name: Build XML from Prenta API
         env:
