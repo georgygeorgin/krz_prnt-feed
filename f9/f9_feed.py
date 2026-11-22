@@ -58,13 +58,31 @@ def fetch():
     data = urllib.parse.urlencode({'USERNAME': USER, 'PASSWORD': PASS, 'XML': body, 'CHECK': check}).encode()
     req = urllib.request.Request(URL, data=data, method='POST')
     req.add_header('Content-Type', 'application/x-www-form-urlencoded')
+    timeout = int(os.environ.get('F9_TIMEOUT', '120'))
+    try:  # which IP F9 sees (helps if F9 has an IP whitelist)
+        with urllib.request.urlopen('https://api.ipify.org', timeout=15) as r:
+            print('Runner public IP:', r.read().decode())
+    except Exception as e:
+        print('Could not detect runner IP:', e)
     last = None
-    for attempt in range(3):
+    for attempt in range(2):
+        t0 = datetime.now()
         try:
-            with urllib.request.urlopen(req, timeout=300) as r:
-                return r.read()
-        except Exception as e:  # network hiccup: retry
+            print(f'F9 request, attempt {attempt + 1}, timeout {timeout}s', flush=True)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                print(f'F9 answered HTTP {r.status} after {(datetime.now() - t0).seconds}s', flush=True)
+                chunks, total = [], 0
+                while True:
+                    c = r.read(1 << 20)
+                    if not c:
+                        break
+                    chunks.append(c)
+                    total += len(c)
+                    print(f'  received {total:,} bytes', flush=True)
+                return b''.join(chunks)
+        except Exception as e:  # network hiccup or blocked: retry once
             last = e
+            print(f'  failed after {(datetime.now() - t0).seconds}s: {e!r}', flush=True)
     sys.exit(f'F9 request failed: {last}')
 
 
