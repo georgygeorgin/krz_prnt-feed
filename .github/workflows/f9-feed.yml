@@ -27,7 +27,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     environment:
       name: github-pages
     env:
@@ -37,6 +37,7 @@ jobs:
       F9_KEY: ${{ secrets.F9_KEY }}
       F9_ONLY_EAN: ${{ vars.F9_ONLY_EAN }}
       F9_SKIP_CATS: ${{ vars.F9_SKIP_CATS }}
+      F9_CARDS_CACHE: f9_cards.json
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +51,14 @@ jobs:
         if: ${{ inputs.probe && inputs.spec_parts == '' }}
         run: python3 f9/f9_feed.py --probe
 
+      # product cards (photos, specs) cache: new cards are fetched in batches, old ones are reused
+      - uses: actions/cache/restore@v4
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
+        with:
+          path: f9_cards.json
+          key: f9-cards-${{ github.run_id }}
+          restore-keys: f9-cards-
+
       # Pages publishes the whole folder at once, so bring back the other feeds already online
       - name: Fetch current feeds
         if: ${{ !inputs.probe && inputs.spec_parts == '' }}
@@ -62,6 +71,12 @@ jobs:
       - name: Build XML from F9 API
         if: ${{ !inputs.probe && inputs.spec_parts == '' }}
         run: python3 f9/f9_feed.py "public/${{ vars.F9_FEED_FILE }}"
+
+      - uses: actions/cache/save@v4
+        if: ${{ always() && !inputs.probe && inputs.spec_parts == '' }}
+        with:
+          path: f9_cards.json
+          key: f9-cards-${{ github.run_id }}
 
       - name: No directory listing
         if: ${{ !inputs.probe && inputs.spec_parts == '' }}
