@@ -24,7 +24,7 @@ Optional filters (env, default off = same content as the old file):
 
 Only standard library, Python 3.8+.
 """
-import collections, hashlib, os, re, sys, urllib.parse, urllib.request
+import collections, hashlib, json, os, re, sys, time, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime
 
@@ -193,6 +193,108 @@ def parse(root):
     return rows
 
 
+# ---------------------------------------------------------------- product cards (photos, specs, description)
+CARDS = os.environ.get('F9_CARDS', '1') == '1'
+CARDS_FILTER = os.environ.get('F9_CARDS_FILTER', 'ean_stock')   # ean_stock | ean | all
+CARDS_BATCH = int(os.environ.get('F9_CARDS_BATCH', '700'))      # new cards fetched per run
+CARDS_LANG = os.environ.get('F9_CARDS_LANG', 'ENG')             # ENG has the long description, LAT does not
+CARDS_CACHE = os.environ.get('F9_CARDS_CACHE', 'f9_cards.json')
+CARD_TTL_DAYS = 30        # refetch a card after this many days
+MISS_TTL_DAYS = 7         # retry "product can not be found" after this many days
+
+
+def parse_card(raw):
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError:
+        return None
+    d = root.find('ProductDetails')
+    if d is None:
+        return None
+    t = lambda tg: (d.findtext(tg) or '').strip()
+    main = t('PictureLocation')
+    base = main.rsplit('/', 1)[0] + '/' if '/' in main else ''
+    pics = [main] if main else []
+    for a in d.findall('AdditionalPictures/AdditionalPictureLocation'):
+        name = (a.text or '').strip()
+        if name:
+            pics.append(name if name.startswith('http') or name.startswith('//') else base + name)
+    specs = [((p.findtext('Name') or '').strip(), (p.findtext('Value') or '').strip()) for p in d.findall('ProductSpecification/Property')]
+    return {
+        'pics': pics,
+        'specs': [x for x in specs if x[0] and x[1]],
+        'desc': t('LongDesc'),
+        'manufacturer': t('Manufacturer'),
+        'group': t('ProductGroup'),
+        'country': t('CountryofOrigin'),
+        'tariff': t('TariffHeading'),
+        'weight': t('Weight'), 'height': t('Height'), 'length': t('Length'), 'width': t('Width'), 'netweight': t('NetWeight'),
+        'ts': int(time.time()),
+    }
+
+
+def load_cards():
+    try:
+        with open(CARDS_CACHE, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def fetch_cards(rows):
+    """Fetch product cards for the wanted products, newest-missing first, at most CARDS_BATCH per run."""
+    cache = load_cards()
+    wanted = [r for r in rows if r['kods'] and (CARDS_FILTER == 'all' or (r['ean'] and (CARDS_FILTER == 'ean' or r['noliktava'] > 0)))]
+    now = time.time()
+    todo = []
+    for r in wanted:
+        c = cache.get(r['kods'])
+        if c is None:
+            todo.append((0, r['kods']))
+        else:
+            age = (now - c.get('ts', 0)) / 86400
+            if age > (MISS_TTL_DAYS if c.get('miss') else CARD_TTL_DAYS):
+                todo.append((c.get('ts', 0), r['kods']))
+    todo.sort()
+    todo = [k for _, k in todo][:CARDS_BATCH]
+    print(f'Cards: {len(wanted)} wanted, {len(cache)} cached, fetching {len(todo)}', flush=True)
+    done = errors = 0
+    for i, part in enumerate(todo):
+        try:
+            raw = fetch(spec_body(part, CARDS_LANG), '120')
+        except SystemExit:
+            errors += 1
+            if errors >= 10:
+                print('Too many card errors, stopping card download for this run')
+                break
+            continue
+        card = parse_card(raw)
+        cache[part] = card or {'miss': 1, 'ts': int(time.time())}
+        done += 1
+        if (i + 1) % 100 == 0:
+            print(f'  cards {i + 1}/{len(todo)}', flush=True)
+            json.dump(cache, open(CARDS_CACHE, 'w', encoding='utf-8'), ensure_ascii=False)
+    json.dump(cache, open(CARDS_CACHE, 'w', encoding='utf-8'), ensure_ascii=False)
+    have = 0
+    for r in rows:
+        c = cache.get(r['kods'])
+        if not c or c.get('miss'):
+            continue
+        have += 1
+        r['apraksts_en'] = c['desc']
+        r['valsts'] = c['country']
+        r['muitas_kods'] = c['tariff']
+        r['svars_kg'] = c['weight']
+        r['augstums_mm'] = c['height']
+        r['garums_mm'] = c['length']
+        r['platums_mm'] = c['width']
+        if c['pics']:
+            r['image'] = c['pics'][0]
+        r['_images'] = c['pics']
+        r['_specs'] = c['specs']
+    print(f'Cards: {done} fetched this run, {have} products have a card in the feed')
+
+
 def write(rows, out):
     old = 0
     if os.path.exists(out):
@@ -204,7 +306,16 @@ def write(rows, out):
     for r in rows:
         p = ET.SubElement(root, 'product')
         for k, v in r.items():
-            ET.SubElement(p, k).text = str(v)
+            if k == '_images':
+                im = ET.SubElement(p, 'images')
+                for u in v:
+                    ET.SubElement(im, 'image').text = u
+            elif k == '_specs':
+                sp = ET.SubElement(p, 'specs')
+                for n, val in v:
+                    ET.SubElement(sp, 'spec', name=n).text = val
+            else:
+                ET.SubElement(p, k).text = str(v)
     ET.indent(root, space='  ')
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     tmp = out + '.tmp'
@@ -253,6 +364,8 @@ def main():
     if not rows:
         print(raw[:1500].decode('latin-1', 'replace'))
         sys.exit('No products in the answer')
+    if CARDS:
+        fetch_cards(rows)
     write(rows, sys.argv[1] if len(sys.argv) > 1 else 'f9.xml')
 
 
