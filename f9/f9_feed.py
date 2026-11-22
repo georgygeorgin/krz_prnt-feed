@@ -58,7 +58,7 @@ def fetch():
     data = urllib.parse.urlencode({'USERNAME': USER, 'PASSWORD': PASS, 'XML': body, 'CHECK': check}).encode()
     req = urllib.request.Request(URL, data=data, method='POST')
     req.add_header('Content-Type', 'application/x-www-form-urlencoded')
-    timeout = int(os.environ.get('F9_TIMEOUT', '120'))
+    timeout = int(os.environ.get('F9_TIMEOUT', '1200'))
     try:  # which IP F9 sees (helps if F9 has an IP whitelist)
         with urllib.request.urlopen('https://api.ipify.org', timeout=15) as r:
             print('Runner public IP:', r.read().decode())
@@ -141,6 +141,19 @@ def parse(root):
         r['cena'] = (item.findtext('Price/UnitPrice') or '').strip()
         r['kategorija'] = grp.get('ClassID', '')
         r['serija'] = grp.get('Series', '')
+        # all price types F9 sends (C = customer; L1..L3 = price levels), kept in separate fields
+        for up in item.findall('Price/UnitPrice'):
+            t = (up.get('Type') or '').strip()
+            if t and (up.text or '').strip():
+                r['cena_' + tag(t)] = up.text.strip()
+        qd = item.find('Price/QtyDiscount')
+        if qd is not None:
+            r['atlaide_no_daudzuma'] = (qd.findtext('MinQty') or '').strip()
+            r['atlaide_cena'] = (qd.findtext('DiscPrice') or '').strip()
+        dd = [(q.findtext('DeliveryDate') or '').strip() for q in item.findall('Qty')]
+        dd = [d for d in dd if d]
+        if dd:
+            r['piegade_datums'] = min(dd)
         r['akcija'] = '1' if (item.findtext('Price/PromoFlag') or '0').strip() == '1' else ''
         r['kategorija_serija'] = f"{r['kategorija']} / {r['serija']}" if r['serija'] else r['kategorija']
         for wh, n in qtys.items():
