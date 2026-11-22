@@ -9,6 +9,10 @@ on:
         description: 'Only print the API answer structure (no publish)'
         type: boolean
         default: false
+      spec_parts:
+        description: 'Product card probe: comma-separated part numbers (no publish). Leave empty for normal run'
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -36,13 +40,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Product card probe (photos, specs)
+        if: ${{ inputs.spec_parts != '' }}
+        env:
+          SPEC_PARTS: ${{ inputs.spec_parts }}
+        run: python3 f9/f9_feed.py --specprobe "$SPEC_PARTS" LAT,ENG
+
       - name: Probe API answer
-        if: ${{ inputs.probe }}
+        if: ${{ inputs.probe && inputs.spec_parts == '' }}
         run: python3 f9/f9_feed.py --probe
 
       # Pages publishes the whole folder at once, so bring back the other feeds already online
       - name: Fetch current feeds
-        if: ${{ !inputs.probe }}
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
         run: |
           mkdir -p public
           [ -n "${{ vars.F9_FEED_FILE }}" ] && curl -fsS "${{ vars.PAGES_URL }}/${{ vars.F9_FEED_FILE }}" -o "public/${{ vars.F9_FEED_FILE }}" || true
@@ -50,17 +60,17 @@ jobs:
           ls -la public
 
       - name: Build XML from F9 API
-        if: ${{ !inputs.probe }}
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
         run: python3 f9/f9_feed.py "public/${{ vars.F9_FEED_FILE }}"
 
       - name: No directory listing
-        if: ${{ !inputs.probe }}
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
         run: echo '<!doctype html><title>.</title>' > public/index.html
 
       - uses: actions/upload-pages-artifact@v3
-        if: ${{ !inputs.probe }}
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
         with:
           path: public
 
       - uses: actions/deploy-pages@v4
-        if: ${{ !inputs.probe }}
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}

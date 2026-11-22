@@ -39,11 +39,11 @@ SKIP_CATS = {c.strip().upper() for c in os.environ.get('F9_SKIP_CATS', '').split
 MIN_SHARE = 0.5   # keep the old file if the new one has < 50% of its products
 
 
-def fetch():
+def fetch(body=None, timeout_default='1200'):
     if not (USER and PASS and CLIENT_ID and KEY):
         sys.exit('F9_USER / F9_PASS / F9_CLIENT_ID / F9_KEY are not set')
     now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
-    body = f"""<CatalogRequest>
+    body = body or f"""<CatalogRequest>
   <Date>{now}</Date>
   <CatNumber>{CAT_NUMBER}</CatNumber>
   <Route>
@@ -58,7 +58,7 @@ def fetch():
     data = urllib.parse.urlencode({'USERNAME': USER, 'PASSWORD': PASS, 'XML': body, 'CHECK': check}).encode()
     req = urllib.request.Request(URL, data=data, method='POST')
     req.add_header('Content-Type', 'application/x-www-form-urlencoded')
-    timeout = int(os.environ.get('F9_TIMEOUT', '1200'))
+    timeout = int(os.environ.get('F9_TIMEOUT', timeout_default))
     try:  # which IP F9 sees (helps if F9 has an IP whitelist)
         with urllib.request.urlopen('https://api.ipify.org', timeout=15) as r:
             print('Runner public IP:', r.read().decode())
@@ -213,7 +213,32 @@ def write(rows, out):
     print(f'Written {out}: {len(rows)} products (old file had {old})')
 
 
+def spec_body(part, lang):
+    now = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    return f'''<ProductSpecRequest>
+  <Date>{now}</Date>
+  <Route>
+    <From><ClientID>{CLIENT_ID}</ClientID></From>
+    <To><ClientID>1</ClientID></To>
+  </Route>
+  <Language>{lang}</Language>
+  <PartNumber>{part}</PartNumber>
+</ProductSpecRequest>'''
+
+
+def spec_probe(parts, langs):
+    for part in parts:
+        for lang in langs:
+            print(f'===== {part} / {lang}')
+            raw = fetch(spec_body(part, lang), '120')
+            print(raw[:6000].decode('utf-8', 'replace') if b'\x00' not in raw[:200] else raw[:200])
+
+
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == '--specprobe':
+        parts = (sys.argv[2] if len(sys.argv) > 2 else '21Q000D1MH').split(',')
+        spec_probe(parts, (sys.argv[3] if len(sys.argv) > 3 else 'LAT,ENG').split(','))
+        return
     raw = fetch()
     print(f'Answer: {len(raw):,} bytes')
     try:
