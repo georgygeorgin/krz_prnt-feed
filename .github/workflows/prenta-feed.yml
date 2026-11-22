@@ -49,7 +49,9 @@ jobs:
           cp -n feeds-prenta/* public/ 2>/dev/null || true
           cp -n feeds-f9/* public/ 2>/dev/null || true
           # first run after the switch (empty cache): take what is online now
-          [ -s "public/${{ vars.FEED_FILE }}" ] || curl -fsS "${{ vars.FEED_URL }}" -o "public/${{ vars.FEED_FILE }}" || true
+          if [ -n "${{ vars.FEED_FILE }}" ] && [ ! -s "public/${{ vars.FEED_FILE }}" ]; then
+            curl -fsS "${{ vars.PAGES_URL }}/${{ vars.FEED_FILE }}" -o "public/${{ vars.FEED_FILE }}" || true
+          fi
           if [ -n "${{ vars.F9_FEED_FILE }}" ] && [ ! -s "public/${{ vars.F9_FEED_FILE }}" ]; then
             curl -fsS "${{ vars.PAGES_URL }}/${{ vars.F9_FEED_FILE }}" -o "public/${{ vars.F9_FEED_FILE }}" || true
           fi
