@@ -86,6 +86,20 @@ def fetch():
     sys.exit(f'F9 request failed: {last}')
 
 
+def load_names(fn):
+    import csv
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'ref', fn)
+    try:
+        with open(path, encoding='utf-8', newline='') as f:
+            return {r['code']: r['name'] for r in csv.DictReader(f)}
+    except OSError:
+        return {}
+
+
+GROUPS = load_names('groups.csv')   # ClassID code -> product group name (from F9 reference file)
+VENDORS = load_names('vendors.csv')  # VendorID code -> vendor name
+
+
 def tag(name):
     t = re.sub(r'[^0-9a-zA-Z_]+', '_', name).strip('_').lower()
     return t if t and not t[0].isdigit() else 'f_' + t
@@ -155,6 +169,8 @@ def parse(root):
         if dd:
             r['piegade_datums'] = min(dd)
         r['akcija'] = '1' if (item.findtext('Price/PromoFlag') or '0').strip() == '1' else ''
+        r['kategorija_nosaukums'] = GROUPS.get(r['kategorija'], '')
+        r['razotajs_nosaukums'] = VENDORS.get(r['razotajs'], '')
         r['kategorija_serija'] = f"{r['kategorija']} / {r['serija']}" if r['serija'] else r['kategorija']
         for wh, n in qtys.items():
             r['noliktava_' + tag(wh)] = n
