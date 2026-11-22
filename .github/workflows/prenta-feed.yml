@@ -30,13 +30,30 @@ jobs:
           key: prenta-cache-${{ github.run_id }}
           restore-keys: prenta-cache-
 
-      # last published feed, so the "don't replace with an almost empty file" guard works
-      - name: Fetch current feed
+      # Every feed keeps its latest file in the Actions cache (private, not on Pages), and every deploy
+      # puts ALL feeds back together, so one feed never wipes another.
+      - uses: actions/cache/restore@v4
+        with:
+          path: feeds-prenta
+          key: feed-prenta-none
+          restore-keys: feed-prenta-
+      - uses: actions/cache/restore@v4
+        with:
+          path: feeds-f9
+          key: feed-f9-none
+          restore-keys: feed-f9-
+
+      - name: Collect feeds into public/
         run: |
-          mkdir -p public
-          curl -fsS "${{ vars.FEED_URL }}" -o "public/${{ vars.FEED_FILE }}" || true
-          # other feeds on the same Pages site (F9), so this deploy doesn't remove them
-          [ -n "${{ vars.F9_FEED_FILE }}" ] && curl -fsS "${{ vars.PAGES_URL }}/${{ vars.F9_FEED_FILE }}" -o "public/${{ vars.F9_FEED_FILE }}" || true
+          mkdir -p public feeds-prenta feeds-f9
+          cp -n feeds-prenta/* public/ 2>/dev/null || true
+          cp -n feeds-f9/* public/ 2>/dev/null || true
+          # first run after the switch (empty cache): take what is online now
+          [ -s "public/${{ vars.FEED_FILE }}" ] || curl -fsS "${{ vars.FEED_URL }}" -o "public/${{ vars.FEED_FILE }}" || true
+          if [ -n "${{ vars.F9_FEED_FILE }}" ] && [ ! -s "public/${{ vars.F9_FEED_FILE }}" ]; then
+            curl -fsS "${{ vars.PAGES_URL }}/${{ vars.F9_FEED_FILE }}" -o "public/${{ vars.F9_FEED_FILE }}" || true
+          fi
+          ls -la public
 
       - name: Build XML from Prenta API
         env:
@@ -50,6 +67,15 @@ jobs:
         with:
           path: prenta_cache.json
           key: prenta-cache-${{ github.run_id }}
+
+      - name: Keep the new feed in the cache
+        run: |
+          rm -f feeds-prenta/*
+          cp "public/${{ vars.FEED_FILE }}" feeds-prenta/
+      - uses: actions/cache/save@v4
+        with:
+          path: feeds-prenta
+          key: feed-prenta-${{ github.run_id }}
 
       - name: No directory listing
         run: echo '<!doctype html><title>.</title>' > public/index.html

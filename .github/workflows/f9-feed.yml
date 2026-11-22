@@ -59,13 +59,34 @@ jobs:
           key: f9-cards-${{ github.run_id }}
           restore-keys: f9-cards-
 
-      # Pages publishes the whole folder at once, so bring back the other feeds already online
-      - name: Fetch current feeds
+      # Every feed keeps its latest file in the Actions cache (private, not on Pages), and every deploy
+      # puts ALL feeds back together, so one feed never wipes another.
+      - uses: actions/cache/restore@v4
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
+        with:
+          path: feeds-f9
+          key: feed-f9-none
+          restore-keys: feed-f9-
+      - uses: actions/cache/restore@v4
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
+        with:
+          path: feeds-prenta
+          key: feed-prenta-none
+          restore-keys: feed-prenta-
+
+      - name: Collect feeds into public/
         if: ${{ !inputs.probe && inputs.spec_parts == '' }}
         run: |
-          mkdir -p public
-          [ -n "${{ vars.F9_FEED_FILE }}" ] && curl -fsS "${{ vars.PAGES_URL }}/${{ vars.F9_FEED_FILE }}" -o "public/${{ vars.F9_FEED_FILE }}" || true
-          [ -n "${{ vars.FEED_FILE }}" ] && curl -fsS "${{ vars.PAGES_URL }}/${{ vars.FEED_FILE }}" -o "public/${{ vars.FEED_FILE }}" || true
+          mkdir -p public feeds-f9 feeds-prenta
+          cp -n feeds-f9/* public/ 2>/dev/null || true
+          cp -n feeds-prenta/* public/ 2>/dev/null || true
+          # first run after the switch (empty cache): take what is online now
+          if [ -n "${{ vars.F9_FEED_FILE }}" ] && [ ! -s "public/${{ vars.F9_FEED_FILE }}" ]; then
+            curl -fsS "${{ vars.PAGES_URL }}/${{ vars.F9_FEED_FILE }}" -o "public/${{ vars.F9_FEED_FILE }}" || true
+          fi
+          if [ -n "${{ vars.FEED_FILE }}" ] && [ ! -s "public/${{ vars.FEED_FILE }}" ]; then
+            curl -fsS "${{ vars.PAGES_URL }}/${{ vars.FEED_FILE }}" -o "public/${{ vars.FEED_FILE }}" || true
+          fi
           ls -la public
 
       - name: Build XML from F9 API
@@ -77,6 +98,17 @@ jobs:
         with:
           path: f9_cards.json
           key: f9-cards-${{ github.run_id }}
+
+      - name: Keep the new feed in the cache
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
+        run: |
+          rm -f feeds-f9/*
+          cp "public/${{ vars.F9_FEED_FILE }}" feeds-f9/
+      - uses: actions/cache/save@v4
+        if: ${{ !inputs.probe && inputs.spec_parts == '' }}
+        with:
+          path: feeds-f9
+          key: feed-f9-${{ github.run_id }}
 
       - name: No directory listing
         if: ${{ !inputs.probe && inputs.spec_parts == '' }}
