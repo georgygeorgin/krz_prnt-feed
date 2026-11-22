@@ -1,0 +1,59 @@
+name: Prenta XML feed
+
+on:
+  schedule:
+    - cron: '40 */4 * * *'   # every 4 hours (UTC)
+  workflow_dispatch: {}       # manual "Run workflow" button
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: prenta-feed
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment:
+      name: github-pages
+    steps:
+      - uses: actions/checkout@v4
+
+      # product cards (EAN) cache: only new/changed cards are re-fetched
+      - uses: actions/cache/restore@v4
+        with:
+          path: prenta_cache.json
+          key: prenta-cache-${{ github.run_id }}
+          restore-keys: prenta-cache-
+
+      # last published feed, so the "don't replace with an almost empty file" guard works
+      - name: Fetch current feed
+        run: |
+          mkdir -p public
+          curl -fsS "${{ vars.FEED_URL }}" -o "public/${{ vars.FEED_FILE }}" || true
+
+      - name: Build XML from Prenta API
+        env:
+          PRENTA_USER: ${{ secrets.PRENTA_USER }}
+          PRENTA_PASS: ${{ secrets.PRENTA_PASS }}
+          PRENTA_CACHE: prenta_cache.json
+        run: python3 prenta_feed.py "public/${{ vars.FEED_FILE }}"
+
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: prenta_cache.json
+          key: prenta-cache-${{ github.run_id }}
+
+      - name: No directory listing
+        run: echo '<!doctype html><title>.</title>' > public/index.html
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+
+      - uses: actions/deploy-pages@v4
