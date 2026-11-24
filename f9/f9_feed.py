@@ -3,7 +3,7 @@
 F9 Baltic XML_Interface -> kruza.lv XML feed.
 
 Same output format as the old f9.py (f9_catalog.xml): <products><product> with
-kods, ean, nosaukums, razotajs, noliktava, cena, kategorija, serija, akcija,
+kods, ean, nosaukums, razotajs, noliktava, cena, kategorija, serija,
 so the existing import profile keeps working. Extra fields are added on top:
   kategorija_serija   "<ClassID> / <Series>" : finer category for mapping
   noliktava_<id>      stock per warehouse
@@ -169,7 +169,6 @@ def parse(root):
         dd = [d for d in dd if d]
         if dd:
             r['piegade_datums'] = min(dd)
-        r['akcija'] = '1' if (item.findtext('Price/PromoFlag') or '0').strip() == '1' else ''
         r['kategorija_nosaukums'] = GROUPS.get(r['kategorija'], '')
         r['razotajs_nosaukums'] = VENDORS.get(r['razotajs'], '')
         r['kategorija_serija'] = f"{r['kategorija']} / {r['serija']}" if r['serija'] else r['kategorija']
