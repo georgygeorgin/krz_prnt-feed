@@ -10,8 +10,10 @@ permissions:
   pages: write
   id-token: write
 
+# serialize this workflow's own runs only - see f9-feed.yml for why this is no
+# longer shared with F9's workflow.
 concurrency:
-  group: pages-feeds
+  group: pages-feed-prenta
   cancel-in-progress: false
 
 jobs:
