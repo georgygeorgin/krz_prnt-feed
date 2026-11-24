@@ -88,4 +88,17 @@ jobs:
         with:
           path: public
 
-      - uses: actions/deploy-pages@v4
+      # deploy-pages occasionally fails right after a successful upload with
+      # "Found 0 artifact(s)" - a GitHub-side indexing race, not anything in
+      # this workflow. One retry after a short wait clears it.
+      - id: deploy1
+        uses: actions/deploy-pages@v4
+        continue-on-error: true
+
+      - name: Wait before retrying the Pages deploy
+        if: steps.deploy1.outcome == 'failure'
+        run: sleep 20
+
+      - id: deploy2
+        if: steps.deploy1.outcome == 'failure'
+        uses: actions/deploy-pages@v4
