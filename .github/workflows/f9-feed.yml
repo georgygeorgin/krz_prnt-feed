@@ -23,9 +23,13 @@ permissions:
   pages: write
   id-token: write
 
-# one Pages site for all feeds: never deploy two at once
+# serialize this workflow's own runs only - a shared group with Prenta's workflow
+# was starving its scheduled cron (GitHub skips a workflow's queued scheduled run
+# while another workflow holds a shared concurrency group). Each feed now restores
+# and republishes both cached files regardless of order, so cross-serializing the
+# two workflows is no longer needed for correctness.
 concurrency:
-  group: pages-feeds
+  group: pages-feed-f9
   cancel-in-progress: false
 
 jobs:
