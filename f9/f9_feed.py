@@ -17,9 +17,8 @@ Usage:
   python3 f9_feed.py --probe            prints the structure of the API answer (no file written)
   python3 f9_feed.py public/f9.xml      writes the feed (keeps the old file if the new one is much smaller)
 
-Optional filters (env):
-  F9_ONLY_EAN=0        keep products without EAN too (default: dropped, since they
-                       have no reliable key and only produce import errors)
+Optional filters (env, default off = same content as the old file):
+  F9_ONLY_EAN=1        drop products without EAN
   F9_SKIP_CATS=WAR,SOF drop these ClassID codes (services, licences...)
   F9_CAT_NUMBER=1001   catalog number for CatalogRequest
 
@@ -35,9 +34,10 @@ PASS = os.environ.get('F9_PASS', '')
 CLIENT_ID = os.environ.get('F9_CLIENT_ID', '')
 KEY = os.environ.get('F9_KEY', '')
 CAT_NUMBER = os.environ.get('F9_CAT_NUMBER', '1001')
-ONLY_EAN = os.environ.get('F9_ONLY_EAN', '1') != '0'
+ONLY_EAN = os.environ.get('F9_ONLY_EAN', '0') == '1'
 SKIP_CATS = {c.strip().upper() for c in os.environ.get('F9_SKIP_CATS', '').split(',') if c.strip()}
 MIN_SHARE = 0.5   # keep the old file if the new one has < 50% of its products
+FORCE = os.environ.get('F9_FORCE', '0') == '1'   # bypass the above once, e.g. after a deliberate filter change
 
 
 def fetch(body=None, timeout_default='1200'):
@@ -301,7 +301,7 @@ def write(rows, out):
     if os.path.exists(out):
         with open(out, 'rb') as f:
             old = f.read().count(b'<product>')
-    if old and len(rows) < old * MIN_SHARE:
+    if old and len(rows) < old * MIN_SHARE and not FORCE:
         sys.exit(f'New feed has {len(rows)} products vs {old} in the old one: old file kept')
     root = ET.Element('products', generated=datetime.now().strftime('%Y-%m-%dT%H:%M:%S'), count=str(len(rows)))
     for r in rows:

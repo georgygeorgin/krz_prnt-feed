@@ -13,6 +13,10 @@ on:
         description: 'Product card probe: comma-separated part numbers (no publish). Leave empty for normal run'
         type: string
         default: ''
+      force:
+        description: 'Publish even if the new feed is much smaller than the last one (use once after a deliberate filter change)'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -37,6 +41,7 @@ jobs:
       F9_KEY: ${{ secrets.F9_KEY }}
       F9_ONLY_EAN: ${{ vars.F9_ONLY_EAN }}
       F9_SKIP_CATS: ${{ vars.F9_SKIP_CATS }}
+      F9_FORCE: ${{ inputs.force && '1' || '' }}
       F9_CARDS_CACHE: f9_cards.json
     steps:
       - uses: actions/checkout@v4
